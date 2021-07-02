@@ -9,15 +9,43 @@ from fitz import fitz  # pymupdf >= 1.18.13
 from pil_watermark import WatermarkStack, TextWatermark
 
 
-def email_watermark(email, rect_size):
-    email_wtm_stack = WatermarkStack(rect_size)
+class WatermarkPDF:
+    _src_pdf_path = ''
+    _src_pdf = None
+    _wtm_stack = None
+
+    def __init__(self, src_pdf, wtm_stack):
+        self._src_pdf_path = src_pdf
+        self._src_pdf = fitz.open(src_pdf)
+        self._wtm_stack = wtm_stack
+
+    def add_watermark_to_pdf(self, tgt_pdf):
+        doc = self._src_pdf
+        dict_xref = {}
+
+        for pg in doc:
+            pg_size = pg.mediabox_size
+            str_pg_size = '{}x{}'.format(pg_size[0], pg_size[1])
+            rect = pg.mediabox
+
+            if str_pg_size in dict_xref:
+                pg.insertImage(rect, xref=dict_xref[str_pg_size])
+            else:
+                page_highres = (int(rect[2] * 4), int(rect[3] * 4))
+                basestream, maskstream = self._wtm_stack.generate_wtm_stream(page_highres)
+                dict_xref[str_pg_size] = pg.insert_image(rect, stream=basestream, mask=maskstream)
+
+        doc.save(tgt_pdf)
+
+
+def email_watermark(email):
+    email_wtm_stack = WatermarkStack()
 
     txt_size = 80
-    fnt = ImageFont.truetype("Pillow/Tests/fonts/FreeMono.ttf", txt_size)
+    fnt = ImageFont.truetype("calibri.ttf", txt_size)
     rotate_angle = 30
 
     wtm_1 = TextWatermark(email,
-                          rect_size,
                           txt_specs={'color_rgba': (0, 0, 0, 48),
                                      'font': fnt},
                           rotate_angle=rotate_angle,
@@ -29,7 +57,6 @@ def email_watermark(email, rect_size):
     # header
     header = 'Please keep this document for personal use only\nDO NOT DISTRIBUTE IT'
     wtm_2 = TextWatermark(header,
-                          rect_size,
                           txt_specs={'color_rgba': (0, 0, 0, 48),
                                      'font': fnt},
                           pos='rt')
@@ -37,26 +64,6 @@ def email_watermark(email, rect_size):
     email_wtm_stack.add_watermark(wtm_2)
 
     return email_wtm_stack
-
-
-def add_watermark_to_pdf(src_pdf, tgt_pdf, email):
-    doc = fitz.open(src_pdf)
-    dict_xref = {}
-
-    for pg in doc:
-        pg_size = pg.mediabox_size
-        str_pg_size = '{}x{}'.format(pg_size[0], pg_size[1])
-        rect = pg.mediabox
-
-        if str_pg_size in dict_xref:
-            pg.insertImage(rect, xref=dict_xref[str_pg_size])
-        else:
-            page_highres = (int(rect[2] * 4), int(rect[3] * 4))
-            wtm_stack = email_watermark(email, page_highres)
-            basestream, maskstream = wtm_stack.generate_wtm_stream()
-            dict_xref[str_pg_size] = pg.insert_image(rect, stream=basestream, mask=maskstream)
-
-    doc.save(tgt_pdf)
 
 
 def watermark_folder(email, src_folder, tgt_folder):
@@ -69,13 +76,15 @@ def watermark_folder(email, src_folder, tgt_folder):
 
     for src_pdf in src_pdfs:
         tgt_pdf = os.path.join(user_path, os.path.basename(src_pdf))
-        add_watermark_to_pdf(src_pdf, tgt_pdf, email)
+        src_pdf = WatermarkPDF(src_pdf, email_watermark(email))
+        src_pdf.add_watermark_to_pdf(tgt_pdf)
 
 
 def process_all_emails(emails_txt, src_folder, tgt_folder, multi=True):
     email_file = open(emails_txt, "r")
     lst_wtm = email_file.readlines()
 
+    # multiprocessing
     if multi:
         with futures.ProcessPoolExecutor() as executor:
             fs = {
@@ -85,6 +94,7 @@ def process_all_emails(emails_txt, src_folder, tgt_folder, multi=True):
             for i, f in tqdm.tqdm(enumerate(futures.as_completed(fs)),
                                   desc="watermarks", total=len(lst_wtm)):
                 f.result()
+    # single thread
     else:
         for wtm in tqdm.tqdm(lst_wtm):
             watermark_folder(wtm, src_folder, tgt_folder)

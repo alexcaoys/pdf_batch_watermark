@@ -24,34 +24,28 @@ def rgba_to_stream(image_byte):
 
 class TextWatermark:
     _watermark_text = ''
-    _rect_size = (0, 0)
-    _rotate_specs = None
+    # _rect_size = (0, 0)
+    _rotate_angle = 0
+    # _rotate_specs = None
     _txt_specs = None
     _repeated = None
     _wtm_im = None
+    _pos = ''
 
     # txt_specs: dictionary with key 'pos', 'color_rgba', 'font', 'align', 'anchor'
     # repeated: None or dictionary with key 'spacing_w', 'spacing_h'
 
-    def __init__(self, watermark_txt, rect_size, txt_specs, rotate_angle=0, repeated=None, pos='lt'):
-        img_w, img_h = rect_size[0], rect_size[1]
+    def __init__(self, watermark_txt, txt_specs, rotate_angle=0, repeated=None, pos='lt'):
+        # img_w, img_h = rect_size[0], rect_size[1]
         self._watermark_text = watermark_txt
-        self._rotate_specs = {'angle': rotate_angle, 'ori_rect': rect_size}
+        # self._rotate_specs = {'angle': rotate_angle, 'ori_rect': rect_size}
+        self._rotate_angle = rotate_angle
         self._repeated = repeated
         self._txt_specs = txt_specs
-        if rotate_angle in [0, 180]:
-            self._rect_size = rect_size
-        elif rotate_angle in [-90, 90]:
-            self._rect_size = (img_h, img_w)
-        else:
-            self._rect_size = (int(img_w * math.cos(math.radians(rotate_angle)) +
-                                   img_h * math.sin(math.radians(rotate_angle))),
-                               int(img_h * math.cos(math.radians(rotate_angle)) +
-                                   img_w * math.sin(math.radians(rotate_angle))))
-        self.position_process(pos)
+        self._pos = pos
 
-    def position_process(self, pos):
-        rect_w, rect_h = self._rect_size[0], self._rect_size[1]
+    def position_process(self, rect_size, pos):
+        rect_w, rect_h = rect_size[0], rect_size[1]
         txt_pos_w_dict = {'l': 0, 'm': rect_w // 2, 'r': rect_w}
         txt_pos_h_dict = {'t': 0, 'm': rect_h // 2, 'b': rect_h}
         anchor = anchor_dict[pos]
@@ -62,8 +56,8 @@ class TextWatermark:
         self._txt_specs['align'] = align
         self._txt_specs['pos'] = (txt_pos_w, txt_pos_h)
 
-    def generate_text_single(self):
-        wtm_im = Image.new('RGBA', self._rect_size, (255, 255, 255, 0))
+    def generate_text_single(self, rect_size):
+        wtm_im = Image.new('RGBA', rect_size, (255, 255, 255, 0))
 
         draw = ImageDraw.Draw(wtm_im)
 
@@ -76,8 +70,8 @@ class TextWatermark:
 
         self._wtm_im = wtm_im
 
-    def generate_text_repeated(self):
-        wtm_im = Image.new('RGBA', self._rect_size, (255, 255, 255, 0))
+    def generate_text_repeated(self, rect_size):
+        wtm_im = Image.new('RGBA', rect_size, (255, 255, 255, 0))
 
         draw = ImageDraw.Draw(wtm_im)
 
@@ -88,8 +82,8 @@ class TextWatermark:
         # print(spacing_w, spacing_h)
 
         # add repeated watermark
-        for i in range(int(self._rect_size[0] // spacing_w) + 1):
-            for j in range(int(self._rect_size[1] // spacing_h) + 1):
+        for i in range(int(rect_size[0] // spacing_w) + 1):
+            for j in range(int(rect_size[1] // spacing_h) + 1):
                 draw.text(((i + 0.15) * spacing_w,  # not on the edge
                            j * spacing_h),
                           self._watermark_text,
@@ -99,60 +93,64 @@ class TextWatermark:
 
         self._wtm_im = wtm_im
 
-    def generate_text(self):
+    def generate_text(self, rect_size):
         if self._repeated:
-            self.generate_text_repeated()
+            self.generate_text_repeated(rect_size)
         else:
-            self.generate_text_single()
+            self.generate_text_single(rect_size)
 
-    def rotate_crop(self):
+    def rotate_crop(self, rect_size):
         wtm_im = self._wtm_im
-        if self._rotate_specs['angle'] == 180:
-            wtm_im = wtm_im.rotate(self._rotate_specs['angle'], expand=1)
-        elif self._rotate_specs['angle'] in [-90, 90]:
-            wtm_im = wtm_im.rotate(self._rotate_specs['angle'], expand=1)
+        if self._rotate_angle == 180:
+            wtm_im = wtm_im.rotate(self._rotate_angle, expand=1)
+        elif self._rotate_angle in [-90, 90]:
+            wtm_im = wtm_im.rotate(self._rotate_angle, expand=1)
         else:
-            rotate_im = wtm_im.rotate(self._rotate_specs['angle'], expand=1)
-            crop_img_w_border = int(self._rotate_specs['ori_rect'][1] *
-                                    math.cos(math.radians(self._rotate_specs['angle'])) *
-                                    math.sin(math.radians(self._rotate_specs['angle'])))
-            crop_img_h_border = int(self._rotate_specs['ori_rect'][0] *
-                                    math.cos(math.radians(self._rotate_specs['angle'])) *
-                                    math.sin(math.radians(self._rotate_specs['angle'])))
+            rotate_im = wtm_im.rotate(self._rotate_angle, expand=1)
+            crop_img_w_border = int(rect_size[1] *
+                                    math.cos(math.radians(self._rotate_angle)) *
+                                    math.sin(math.radians(self._rotate_angle)))
+            crop_img_h_border = int(rect_size[0] *
+                                    math.cos(math.radians(self._rotate_angle)) *
+                                    math.sin(math.radians(self._rotate_angle)))
             wtm_im = rotate_im.crop((crop_img_w_border,
                                      crop_img_h_border,
-                                     crop_img_w_border + self._rotate_specs['ori_rect'][0],
-                                     crop_img_h_border + self._rotate_specs['ori_rect'][1]))
+                                     crop_img_w_border + rect_size[0],
+                                     crop_img_h_border + rect_size[1]))
         self._wtm_im = wtm_im
 
-    def generate_im(self):
-        self.generate_text()
-        if self._rotate_specs['angle'] != 0:
-            self.rotate_crop()
+    def generate_im(self, rect_size):
+        if self._rotate_angle in [0, 180]:
+            wtm_w, wtm_h = rect_size[0], rect_size[1]
+        elif self._rotate_angle in [-90, 90]:
+            wtm_w, wtm_h = rect_size[1], rect_size[0]
+        else:
+            wtm_w, wtm_h = (int(rect_size[0] * math.cos(math.radians(self._rotate_angle)) +
+                                rect_size[1] * math.sin(math.radians(self._rotate_angle))),
+                            int(rect_size[1] * math.cos(math.radians(self._rotate_angle)) +
+                                rect_size[0] * math.sin(math.radians(self._rotate_angle))))
+        self.position_process((wtm_w, wtm_h), self._pos)
+        self.generate_text((wtm_w, wtm_h))
+        if self._rotate_angle != 0:
+            self.rotate_crop(rect_size)
         return self._wtm_im
-
-    def get_size(self):
-        return self._rect_size
 
 
 class WatermarkStack:
-    _rect_size = (0, 0)
+    # _rect_size = (0, 0)
     _lst_wtm = []
 
-    def __init__(self, rect_size):
-        self._rect_size = rect_size
+    def __init__(self):
+        # self._rect_size = rect_size
         self._lst_wtm = []
 
     def add_watermark(self, wtm):
-        if wtm.get_size() != self._rect_size:
-            print('watermark_size_error')
-            return
         self._lst_wtm.append(wtm)
 
-    def generate_wtm_im(self):
-        stack_im = Image.new('RGBA', self._rect_size, (255, 255, 255, 0))
+    def generate_wtm_im(self, rect_size):
+        stack_im = Image.new('RGBA', rect_size, (255, 255, 255, 0))
         for wtm in self._lst_wtm:
-            wtm_im = wtm.generate_im()
+            wtm_im = wtm.generate_im(rect_size)
             stack_im = Image.alpha_composite(stack_im, wtm_im)
 
         buf = io.BytesIO()
@@ -161,6 +159,6 @@ class WatermarkStack:
 
         return byte_im
 
-    def generate_wtm_stream(self):
-        watermark_byte = self.generate_wtm_im()
+    def generate_wtm_stream(self, rect_size):
+        watermark_byte = self.generate_wtm_im(rect_size)
         return rgba_to_stream(watermark_byte)
