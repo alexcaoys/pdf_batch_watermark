@@ -24,4 +24,5 @@ In theory, it is possible to add many things as long as it follows the same fram
 ## Future
 
 I will try to add some easy to use functions (hopefully)
-In the end, this is only a toy project for some one-time need
+
+Anyway, this is only a toy project for some one-time need.
